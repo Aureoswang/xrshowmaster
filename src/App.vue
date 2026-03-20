@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
+import * as THREE from 'three'
 
 // 状态
 const activeTab = ref('scene')
@@ -36,6 +37,180 @@ const lenses = ref([
   { id: 'l6', name: '全景', icon: '🌄', active: false },
 ])
 const activeLens = ref('l1')
+
+// 3D 虚拟背景
+const enable3DScene = ref(true)
+const current3DScene = ref('cyberpunk')
+
+// Three.js 变量
+let threeScene: THREE.Scene | null = null
+let threeCamera: THREE.PerspectiveCamera | null = null
+let threeRenderer: THREE.WebGLRenderer | null = null
+let threeCanvasEl: HTMLCanvasElement | null = null
+let threeAnimationId: number | null = null
+
+// 3D 场景列表
+const threeDScenes = [
+  { id: 'cyberpunk', name: '赛博朋克', icon: '🌃' },
+  { id: 'studio', name: '虚拟演播室', icon: '🏢' },
+  { id: 'nature', name: '自然风光', icon: '🌲' },
+  { id: 'space', name: '太空站', icon: '🚀' },
+]
+
+// 初始化 3D 场景
+function init3DScene() {
+  threeCanvasEl = document.getElementById('three-canvas') as HTMLCanvasElement
+  if (!threeCanvasEl) return
+  
+  threeScene = new THREE.Scene()
+  threeCamera = new THREE.PerspectiveCamera(75, 1920/1080, 0.1, 1000)
+  threeCamera.position.z = 5
+  
+  threeRenderer = new THREE.WebGLRenderer({ canvas: threeCanvasEl, alpha: true, antialias: true })
+  threeRenderer.setSize(1920, 1080)
+  threeRenderer.setClearColor(0x000000, 0)
+  
+  // 添加环境光
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+  threeScene.add(ambientLight)
+  
+  // 添加点光源
+  const pointLight = new THREE.PointLight(0x00d9ff, 1, 100)
+  pointLight.position.set(0, 5, 5)
+  threeScene.add(pointLight)
+  
+  create3DElements(current3DScene.value)
+  animate3D()
+}
+
+function create3DElements(sceneType: string) {
+  if (!threeScene) return
+  
+  // 清除现有元素
+  while(threeScene.children.length > 0) { 
+    threeScene.remove(threeScene.children[0]) 
+  }
+  
+  // 重新添加灯光
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+  threeScene.add(ambientLight)
+  const pointLight = new THREE.PointLight(0x00d9ff, 1, 100)
+  pointLight.position.set(0, 5, 5)
+  threeScene.add(pointLight)
+  
+  if (sceneType === 'cyberpunk') {
+    // 霓虹网格地面
+    const gridHelper = new THREE.GridHelper(20, 20, 0xff00ff, 0x00ffff)
+    gridHelper.position.y = -2
+    threeScene.add(gridHelper)
+    
+    // 漂浮光球
+    for (let i = 0; i < 8; i++) {
+      const geometry = new THREE.SphereGeometry(0.2 + Math.random() * 0.3, 16, 16)
+      const material = new THREE.MeshBasicMaterial({ 
+        color: Math.random() > 0.5 ? 0xff00ff : 0x00ffff 
+      })
+      const sphere = new THREE.Mesh(geometry, material)
+      sphere.position.set(
+        (Math.random() - 0.5) * 10,
+        Math.random() * 4 - 1,
+        (Math.random() - 0.5) * 6 - 2
+      )
+      sphere.userData = { speed: 0.01 + Math.random() * 0.02, originalY: sphere.position.y }
+      threeScene!.add(sphere)
+    }
+  } else if (sceneType === 'studio') {
+    // 演播室 - 墙壁和地面
+    const floorGeo = new THREE.PlaneGeometry(20, 20)
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x333344, roughness: 0.8 })
+    const floor = new THREE.Mesh(floorGeo, floorMat)
+    floor.rotation.x = -Math.PI / 2
+    floor.position.y = -2
+    threeScene.add(floor)
+    
+    // 背景墙
+    const wallGeo = new THREE.PlaneGeometry(20, 10)
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x222233 })
+    const wall = new THREE.Mesh(wallGeo, wallMat)
+    wall.position.z = -5
+    threeScene.add(wall)
+    
+    // 灯光
+    const spotLight = new THREE.SpotLight(0xffffff, 2)
+    spotLight.position.set(0, 8, 2)
+    spotLight.angle = Math.PI / 6
+    spotLight.penumbra = 0.3
+    threeScene.add(spotLight)
+  } else if (sceneType === 'space') {
+    // 太空 - 星星背景
+    for (let i = 0; i < 200; i++) {
+      const starGeo = new THREE.SphereGeometry(0.02 + Math.random() * 0.05)
+      const starMat = new THREE.MeshBasicMaterial({ color: 0xffffff })
+      const star = new THREE.Mesh(starGeo, starMat)
+      star.position.set(
+        (Math.random() - 0.5) * 30,
+        (Math.random() - 0.5) * 20,
+        (Math.random() - 0.5) * 20 - 10
+      )
+      threeScene.add(star)
+    }
+    
+    // 地球
+    const earthGeo = new THREE.SphereGeometry(2, 32, 32)
+    const earthMat = new THREE.MeshStandardMaterial({ color: 0x2244ff, roughness: 0.8 })
+    const earth = new THREE.Mesh(earthGeo, earthMat)
+    earth.position.set(5, 0, -8)
+    threeScene.add(earth)
+  } else if (sceneType === 'nature') {
+    // 自然 - 草地和天空
+    const groundGeo = new THREE.PlaneGeometry(30, 30)
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x228833, roughness: 1 })
+    const ground = new THREE.Mesh(groundGeo, groundMat)
+    ground.rotation.x = -Math.PI / 2
+    ground.position.y = -2
+    threeScene.add(ground)
+    
+    // 天空渐变球
+    const skyGeo = new THREE.SphereGeometry(15, 32, 32)
+    const skyMat = new THREE.MeshBasicMaterial({ color: 0x87ceeb, side: THREE.BackSide })
+    const sky = new THREE.Mesh(skyGeo, skyMat)
+    threeScene.add(sky)
+    
+    // 树木
+    for (let i = 0; i < 5; i++) {
+      const trunkGeo = new THREE.CylinderGeometry(0.2, 0.3, 1.5)
+      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8b4513 })
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat)
+      trunk.position.set(-5 + i * 2.5, -1.25, -5)
+      threeScene.add(trunk)
+      
+      const leavesGeo = new THREE.ConeGeometry(1, 2, 8)
+      const leavesMat = new THREE.MeshStandardMaterial({ color: 0x228b22 })
+      const leaves = new THREE.Mesh(leavesGeo, leavesMat)
+      leaves.position.set(-5 + i * 2.5, 0.5, -5)
+      threeScene.add(leaves)
+    }
+  }
+}
+
+function animate3D() {
+  if (!threeRenderer || !threeScene || !threeCamera) return
+  
+  // 动画效果
+  threeScene.children.forEach((child: any) => {
+    if (child.userData && child.userData.speed) {
+      child.position.y = child.userData.originalY + Math.sin(Date.now() * 0.001) * 0.3
+    }
+  })
+  
+  threeRenderer.render(threeScene, threeCamera)
+  threeAnimationId = requestAnimationFrame(animate3D)
+}
+
+function switch3DScene(sceneId: string) {
+  current3DScene.value = sceneId
+  create3DElements(sceneId)
+}
 
 // 设置
 const chromaKey = ref({ enabled: false, color: '#00ff00', similarity: 40, smoothness: 10, spillRemoval: 20 })
@@ -105,6 +280,11 @@ function startPreview() {
   c.width = o.width = 1920; c.height = o.height = 1080
   ctx = c.getContext('2d', { willReadFrequently: true })!
   outCtx = o.getContext('2d')!
+  
+  // 初始化 3D 场景
+  if (enable3DScene.value) {
+    setTimeout(init3DScene, 100)
+  }
 
   function draw() {
     if (!isStreaming.value || !ctx || !outCtx) return
@@ -112,7 +292,16 @@ function startPreview() {
     if (chromaKey.value.enabled) applyChromaKey()
     if (color.value.brightness || color.value.contrast) applyColor()
     if (effect.value.vignette > 0) applyVignette()
-    outCtx.drawImage(c, 0, 0)
+    
+    // 叠加 3D 背景
+    if (enable3DScene.value && threeCanvasEl) {
+      outCtx.drawImage(threeCanvasEl, 0, 0)
+      outCtx.globalAlpha = 0.9
+      outCtx.drawImage(c, 0, 0)
+      outCtx.globalAlpha = 1
+    } else {
+      outCtx.drawImage(c, 0, 0)
+    }
     animationFrame = requestAnimationFrame(draw)
   }
   draw()
@@ -207,9 +396,12 @@ watch(selectedCameraId, () => { if (isStreaming.value) { stopCamera(); startCame
   <div class="main">
     <aside class="sidebar-left">
       <div v-if="activeTab==='scene'" class="panel">
-        <h3 class="panel-title">场景列表</h3>
-        <div class="scene-grid">
-          <div v-for="s in scenes" :key="s.id" class="scene-item"><div class="scene-thumb">{{ s.icon }}</div><span>{{ s.name }}</span></div>
+        <h3 class="panel-title">3D 虚拟背景</h3>
+        <div class="prop-item"><label class="switch"><input type="checkbox" v-model="enable3DScene"><span class="slider"></span></label><span>启用 3D 背景</span></div>
+        <div v-if="enable3DScene" class="scene-grid">
+          <div v-for="s in threeDScenes" :key="s.id" class="scene-item" :class="{active:current3DScene===s.id}" @click="switch3DScene(s.id)">
+            <div class="scene-thumb">{{ s.icon }}</div><span>{{ s.name }}</span>
+          </div>
         </div>
       </div>
       <div v-if="activeTab==='material'" class="panel">
@@ -251,6 +443,7 @@ watch(selectedCameraId, () => { if (isStreaming.value) { stopCamera(); startCame
     <main class="preview">
       <video ref="videoRef" class="video-hidden" muted></video>
       <canvas ref="previewCanvas" class="canvas-process"></canvas>
+      <canvas id="three-canvas" class="canvas-three" :class="{active: enable3DScene && isStreaming}"></canvas>
       <canvas ref="outputCanvas" class="canvas-output"></canvas>
       <div v-if="!isStreaming" class="preview-empty"><span>📷</span><p>点击"开启摄像头"开始预览</p></div>
       <div class="lens-overlay"><span>{{ lenses.find(x=>x.id===activeLens)?.name }}</span></div>
@@ -351,7 +544,9 @@ watch(selectedCameraId, () => { if (isStreaming.value) { stopCamera(); startCame
 .switch input:checked+.slider:before{transform:translateX(20px)}
 .preview{flex:1;position:relative;background:#000;display:flex;align-items:center;justify-content:center}
 .video-hidden,.canvas-process{position:absolute;width:1px;height:1px;opacity:0}
-.canvas-output{width:100%;height:100%;object-fit:contain}
+.canvas-output,.canvas-three{width:100%;height:100%;position:absolute;top:0;left:0;object-fit:contain}
+.canvas-three{opacity:0;transition:opacity .5s}
+.canvas-three.active{opacity:1}
 .preview-empty{position:absolute;color:#666;text-align:center}
 .preview-empty span{font-size:64px;display:block}
 .lens-overlay{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);padding:8px 20px;border-radius:20px}

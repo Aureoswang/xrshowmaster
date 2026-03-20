@@ -52,6 +52,7 @@ let threeAnimationId: number | null = null
 // 3D 场景列表
 const threeDScenes = [
   { id: 'cyberpunk', name: '赛博朋克', icon: '🌃' },
+  { id: 'liveshow', name: 'Live舞台', icon: '🎤' },
   { id: 'studio', name: '虚拟演播室', icon: '🏢' },
   { id: 'nature', name: '自然风光', icon: '🌲' },
   { id: 'space', name: '太空站', icon: '🚀' },
@@ -118,6 +119,119 @@ function create3DElements(sceneType: string) {
       )
       sphere.userData = { speed: 0.01 + Math.random() * 0.02, originalY: sphere.position.y }
       threeScene!.add(sphere)
+    }
+  } else if (sceneType === 'liveshow') {
+    // === 赛博 Live Show 舞台 ===
+    
+    // 舞台地板 - 黑色反光
+    const stageGeo = new THREE.PlaneGeometry(16, 10)
+    const stageMat = new THREE.MeshStandardMaterial({ 
+      color: 0x111111, 
+      roughness: 0.2, 
+      metalness: 0.8 
+    })
+    const stage = new THREE.Mesh(stageGeo, stageMat)
+    stage.rotation.x = -Math.PI / 2
+    stage.position.y = -2
+    threeScene.add(stage)
+    
+    // 舞台边缘霓虹灯
+    const edgeGeo = new THREE.BoxGeometry(16, 0.1, 0.3)
+    const edgeMat = new THREE.MeshBasicMaterial({ color: 0xff00ff })
+    const frontEdge = new THREE.Mesh(edgeGeo, edgeMat)
+    frontEdge.position.set(0, -1.95, 4)
+    threeScene.add(frontEdge)
+    const backEdge = new THREE.Mesh(edgeGeo, edgeMat)
+    backEdge.position.set(0, -1.95, -4)
+    threeScene.add(backEdge)
+    
+    // LED 屏幕背景墙
+    const screenGeo = new THREE.PlaneGeometry(14, 7)
+    const screenMat = new THREE.MeshBasicMaterial({ 
+      color: 0x001133,
+      emissive: 0x003366,
+      emissiveIntensity: 0.5
+    })
+    const screen = new THREE.Mesh(screenGeo, screenMat)
+    screen.position.set(0, 1, -4.5)
+    threeScene.add(screen)
+    
+    // 屏幕边框
+    const frameGeo = new THREE.BoxGeometry(14.4, 7.4, 0.2)
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.9 })
+    const frame = new THREE.Mesh(frameGeo, frameMat)
+    frame.position.set(0, 1, -4.6)
+    threeScene.add(frame)
+    
+    // 舞台灯光 - 4个霓虹柱
+    const pillarColors = [0xff00ff, 0x00ffff, 0xff00ff, 0x00ffff]
+    for (let i = 0; i < 4; i++) {
+      const pillarGeo = new THREE.CylinderGeometry(0.15, 0.15, 6, 8)
+      const pillarMat = new THREE.MeshBasicMaterial({ 
+        color: pillarColors[i],
+        transparent: true,
+        opacity: 0.7
+      })
+      const pillar = new THREE.Mesh(pillarGeo, pillarMat)
+      pillar.position.set(-5 + i * 3.33, 1, -3)
+      threeScene.add(pillar)
+      
+      // 柱子顶部灯光
+      const topLight = new THREE.PointLight(pillarColors[i], 2, 8)
+      topLight.position.set(-5 + i * 3.33, 4, -3)
+      threeScene.add(topLight)
+    }
+    
+    // 舞台灯光 - 正面两个
+    const frontLight1 = new THREE.SpotLight(0xff00ff, 3)
+    frontLight1.position.set(-3, 6, 4)
+    frontLight1.angle = Math.PI / 8
+    frontLight1.penumbra = 0.5
+    threeScene.add(frontLight1)
+    
+    const frontLight2 = new THREE.SpotLight(0x00ffff, 3)
+    frontLight2.position.set(3, 6, 4)
+    frontLight2.angle = Math.PI / 8
+    frontLight2.penumbra = 0.5
+    threeScene.add(frontLight2)
+    
+    // 舞台正面 Logo 灯牌
+    const logoGeo = new THREE.PlaneGeometry(4, 1)
+    const logoMat = new THREE.MeshBasicMaterial({ 
+      color: 0xff00ff,
+      emissive: 0xff00ff,
+      emissiveIntensity: 1
+    })
+    const logo = new THREE.Mesh(logoGeo, logoMat)
+    logo.position.set(0, 4, -4.4)
+    threeScene.add(logo)
+    
+    // 地面反射效果（用透明平面模拟）
+    const reflectionGeo = new THREE.PlaneGeometry(16, 10)
+    const reflectionMat = new THREE.MeshBasicMaterial({
+      color: 0xff00ff,
+      transparent: true,
+      opacity: 0.1
+    })
+    const reflection = new THREE.Mesh(reflectionGeo, reflectionMat)
+    reflection.rotation.x = -Math.PI / 2
+    reflection.position.y = -1.99
+    threeScene.add(reflection)
+    
+    // 添加一些漂浮的光粒子效果
+    for (let i = 0; i < 20; i++) {
+      const particleGeo = new THREE.SphereGeometry(0.03, 8, 8)
+      const particleMat = new THREE.MeshBasicMaterial({ 
+        color: Math.random() > 0.5 ? 0xff00ff : 0x00ffff 
+      })
+      const particle = new THREE.Mesh(particleGeo, particleMat)
+      particle.position.set(
+        (Math.random() - 0.5) * 12,
+        Math.random() * 5,
+        (Math.random() - 0.5) * 6
+      )
+      particle.userData = { speed: 0.005 + Math.random() * 0.01, originalY: particle.position.y }
+      threeScene.add(particle)
     }
   } else if (sceneType === 'studio') {
     // 演播室 - 墙壁和地面

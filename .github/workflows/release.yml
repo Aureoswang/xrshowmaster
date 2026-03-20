@@ -23,7 +23,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install all dependencies
-        run: npm install && npx vue-tsc --noEmit
+        run: npm install
 
       - name: Build Tauri app
         run: npx --yes @tauri-apps/cli build

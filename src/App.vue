@@ -482,7 +482,13 @@ function startRecording() {
 function stopRecording() { mediaRecorder?.stop(); isRecording.value = false; clearInterval(recordingTime.value) }
 function formatTime(s: number) { return `${Math.floor(s/3600).toString().padStart(2,'0')}:${Math.floor(s%3600/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}` }
 
-onMounted(() => getCameras())
+onMounted(() => {
+  getCameras()
+  // 延迟初始化3D场景，等待DOM就绪
+  setTimeout(() => {
+    init3DScene()
+  }, 500)
+})
 onUnmounted(() => { stopCamera(); if (recordingTime.value) clearInterval(recordingTime.value) })
 watch(selectedCameraId, () => { if (isStreaming.value) { stopCamera(); startCamera() } })
 </script>

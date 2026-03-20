@@ -26,28 +26,13 @@ jobs:
       - name: Install dependencies
         run: powershell -Command "if (Test-Path node_modules) { Remove-Item -Recurse -Force node_modules }; if (Test-Path package-lock.json) { Remove-Item package-lock.json }; npm install"
 
-      - name: Build frontend
-        run: npx vite build
-
       - name: Build Tauri app
-        run: npx @tauri-apps/cli build --no-bundle
-
-      - name: Create Release
-        uses: actions/create-release@v1
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref }}
-          release_name: 'XRShowMaster v${{ github.ref_name }}'
-          draft: false
+          tagName: ${{ github.ref_name }}
+          releaseName: 'XRShowMaster v__VERSION__'
+          releaseBody: 'See the assets to download this version and install.'
+          releaseDraft: false
           prerelease: false
-
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./src-tauri/target/release/*.exe
-          asset_name: XRShowMaster-${{ github.ref_name }}.exe
-          asset_content_type: application/x-msdownload

@@ -2,6 +2,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js'
+import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js'
 
 // 状态
 const videoRef = ref<HTMLVideoElement | null>(null)
@@ -15,6 +17,38 @@ const isRecording = ref(false)
 const selectedScene = ref('cyberpunk')
 const selectedBg = ref('gradient')
 const recordingTime = ref(0)
+
+// 多机位相关状态
+const cameras = ref<MediaDeviceInfo[]>([])
+const selectedCameraId = ref('')
+const activeCameraIndex = ref(0) // 当前使用的主机位
+const showMultiPreview = ref(false) // 是否显示多机位预览
+
+// 预置的虚拟机位（模拟多机位效果）
+const virtualCameras = ref([
+  { id: 'cam1', name: '机位 1 - 主镜头', active: true, position: { x: 0, y: 0, z: 5 }, fov: 75 },
+  { id: 'cam2', name: '机位 2 - 侧全景', active: false, position: { x: -3, y: 1, z: 4 }, fov: 90 },
+  { id: 'cam3', name: '机位 3 - 特写', active: false, position: { x: 0, y: 0, z: 2 }, fov: 50 },
+])
+
+// 相机位置控制状态
+const cameraDistance = ref(5) // 距离
+const cameraAngle = ref(0) // 水平角度
+const cameraHeight = ref(0) // 高度
+const keyPressed = ref<Set<string>>(new Set()) // 按键状态
+
+// 3D文本相关状态
+const showText3D = ref(false)
+const text3DContent = ref('XRShowMaster')
+const text3DSize = ref(0.5)
+const text3DX = ref(0)
+const text3DY = ref(1)
+const text3DZ = ref(0)
+const text3DScale = ref(1)
+const text3DFont = ref('helvetiker')
+const text3DBold = ref(false)
+const text3DColor = ref('#ff00ff')
+let text3DMesh: THREE.Mesh | null = null
 
 let mediaStream: MediaStream | null = null
 let animationFrame: number | null = null
@@ -39,11 +73,75 @@ const backgrounds = [
   { id: 'mountains', name: '仙山背景' },
 ]
 
+// 获取可用摄像头列表
+async function getCameraList() {
+  try {
+    // 先请求权限获取设备列表
+    await navigator.mediaDevices.getUserMedia({ video: true })
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    cameras.value = devices.filter(device => device.kind === 'videoinput')
+    if (cameras.value.length > 0 && !selectedCameraId.value) {
+      selectedCameraId.value = cameras.value[0].deviceId
+    }
+    console.log('可用摄像头:', cameras.value)
+  } catch (err) {
+    console.error('获取摄像头列表失败:', err)
+  }
+}
+
+// 切换摄像头
+async function switchCamera(deviceId: string) {
+  selectedCameraId.value = deviceId
+  // 重新初始化摄像头
+  if (isStreaming.value) {
+    stopCamera()
+    await initCamera()
+  }
+}
+
+// 切换机位（模拟多机位切换）
+function switchCameraPosition(index: number) {
+  if (index < 0 || index >= virtualCameras.value.length) return
+  
+  // 更新激活状态
+  virtualCameras.value.forEach((cam, i) => {
+    cam.active = (i === index)
+  })
+  activeCameraIndex.value = index
+  
+  // 可以在这里添加镜头切换特效
+  console.log('切换到机位:', index + 1)
+}
+
+// 切换到下一个机位
+function nextCamera() {
+  const nextIndex = (activeCameraIndex.value + 1) % virtualCameras.value.length
+  switchCameraPosition(nextIndex)
+}
+
+// 切换到上一个机位
+function prevCamera() {
+  const prevIndex = (activeCameraIndex.value - 1 + virtualCameras.value.length) % virtualCameras.value.length
+  switchCameraPosition(prevIndex)
+}
+
 // 初始化摄像头
 async function initCamera() {
   try {
+    const videoConstraints: MediaTrackConstraints = {
+      width: 1280,
+      height: 720,
+      facingMode: 'user'
+    }
+    
+    // 如果选择了特定摄像头，使用设备ID
+    if (selectedCameraId.value) {
+      delete videoConstraints.facingMode
+      videoConstraints.deviceId = { exact: selectedCameraId.value }
+    }
+    
     mediaStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 1280, height: 720, facingMode: 'user' },
+      video: videoConstraints,
       audio: false
     })
     if (videoRef.value) {
@@ -309,6 +407,76 @@ function animateThree() {
   requestAnimationFrame(animateThree)
 }
 
+// 加载字体并创建3D文本
+
+function createText3D() {
+  if (!threeScene) return
+  
+  // 移除旧的3D文本
+  if (text3DMesh) {
+    threeScene.remove(text3DMesh)
+    text3DMesh.geometry.dispose()
+    ;(text3DMesh.material as THREE.Material).dispose()
+    text3DMesh = null
+  }
+  
+  if (!showText3D.value || !text3DContent.value) return
+  
+  const loader = new FontLoader()
+  
+  // 字体URL - 使用Three.js内置字体
+  const fontUrl = `https://threejs.org/examples/fonts/${text3DFont.value}_${text3DBold.value ? 'bold' : 'regular'}.typeface.json`
+  
+  loader.load(fontUrl, (font) => {
+    const geometry = new TextGeometry(text3DContent.value, {
+      font: font,
+      size: text3DSize.value,
+      depth: 0.1, // 厚度
+      curveSegments: 12,
+      bevelEnabled: true,
+      bevelThickness: 0.02,
+      bevelSize: 0.01,
+      bevelOffset: 0,
+      bevelSegments: 5
+    })
+    
+    // 居中
+    geometry.computeBoundingBox()
+    const centerOffset = -0.5 * (geometry.boundingBox!.max.x - geometry.boundingBox!.min.x)
+    geometry.translate(centerOffset, 0, 0)
+    
+    const material = new THREE.MeshPhongMaterial({ 
+      color: text3DColor.value,
+      specular: 0xffffff,
+      shininess: 30
+    })
+    
+    text3DMesh = new THREE.Mesh(geometry, material)
+    text3DMesh.position.set(text3DX.value, text3DY.value, text3DZ.value)
+    text3DMesh.scale.setScalar(text3DScale.value)
+    
+    threeScene!.add(text3DMesh)
+  })
+}
+
+// 更新3D文本
+function updateText3D() {
+  if (!threeScene) return
+  
+  // 移除旧的
+  if (text3DMesh) {
+    threeScene.remove(text3DMesh)
+    text3DMesh.geometry.dispose()
+    ;(text3DMesh.material as THREE.Material).dispose()
+    text3DMesh = null
+  }
+  
+  // 重新创建
+  if (showText3D.value && text3DContent.value) {
+    createText3D()
+  }
+}
+
 // 切换场景
 function switchScene(sceneId: string) {
   selectedScene.value = sceneId
@@ -385,6 +553,13 @@ function formatTime(seconds: number) {
 
 onMounted(() => {
   initThreeJS()
+  getCameraList()
+  
+  // 键盘事件监听
+  window.addEventListener('keydown', handleKeyDown)
+  window.addEventListener('keyup', handleKeyUp)
+  // 启动键盘控制循环
+  startKeyboardControlLoop()
 })
 
 onUnmounted(() => {
@@ -392,7 +567,91 @@ onUnmounted(() => {
   if (threeRenderer) {
     threeRenderer.dispose()
   }
+  // 移除键盘事件监听
+  window.removeEventListener('keydown', handleKeyDown)
+  window.removeEventListener('keyup', handleKeyUp)
 })
+
+// 键盘按键处理
+function handleKeyDown(e: KeyboardEvent) {
+  const key = e.key.toLowerCase()
+  keyPressed.value.add(key)
+  
+  // 切换机位
+  if (key === '1') switchCameraPosition(0)
+  if (key === '2') switchCameraPosition(1)
+  if (key === '3') switchCameraPosition(2)
+}
+
+function handleKeyUp(e: KeyboardEvent) {
+  const key = e.key.toLowerCase()
+  keyPressed.value.delete(key)
+}
+
+// 键盘控制循环
+const keyboardLoopId = ref<number | null>(null)
+
+function startKeyboardControlLoop() {
+  function loop() {
+    if (!threeCamera) {
+      keyboardLoopId.value = requestAnimationFrame(loop)
+      return
+    }
+    
+    const speed = 0.05
+    const rotateSpeed = 0.03
+    
+    // W - 前进（推近）
+    if (keyPressed.value.has('w')) {
+      cameraDistance.value = Math.max(1, cameraDistance.value - speed * 10)
+    }
+    // S - 后退（拉远）
+    if (keyPressed.value.has('s')) {
+      cameraDistance.value = Math.min(15, cameraDistance.value + speed * 10)
+    }
+    // Q - 左转
+    if (keyPressed.value.has('q')) {
+      cameraAngle.value -= rotateSpeed
+    }
+    // E - 右转（增加E键）
+    if (keyPressed.value.has('e')) {
+      cameraAngle.value += rotateSpeed
+    }
+    // A - 左移
+    if (keyPressed.value.has('a')) {
+      if (threeCamera) {
+        threeCamera.position.x -= speed
+      }
+    }
+    // D - 右移
+    if (keyPressed.value.has('d')) {
+      if (threeCamera) {
+        threeCamera.position.x += speed
+      }
+    }
+    // R - 上升
+    if (keyPressed.value.has('r')) {
+      cameraHeight.value += speed
+    }
+    // F - 下降
+    if (keyPressed.value.has('f')) {
+      cameraHeight.value -= speed
+    }
+    
+    // 更新相机位置（基于极坐标）
+    if (threeCamera) {
+      const x = Math.sin(cameraAngle.value) * cameraDistance.value
+      const z = Math.cos(cameraAngle.value) * cameraDistance.value
+      threeCamera.position.x = x
+      threeCamera.position.z = z
+      threeCamera.position.y = cameraHeight.value
+      threeCamera.lookAt(0, 0, 0)
+    }
+    
+    keyboardLoopId.value = requestAnimationFrame(loop)
+  }
+  loop()
+}
 </script>
 
 <template>
@@ -413,6 +672,42 @@ onUnmounted(() => {
           </button>
           <button v-else @click="stopCamera" class="btn btn-danger">
             停止摄像头
+          </button>
+        </div>
+        
+        <!-- 多机位控制 -->
+        <div class="panel-section">
+          <h3>🎥 多机位</h3>
+          <div class="camera-select" v-if="cameras.length > 1">
+            <label>选择摄像头:</label>
+            <select v-model="selectedCameraId" @change="switchCamera(selectedCameraId)" class="select-input">
+              <option v-for="cam in cameras" :key="cam.deviceId" :value="cam.deviceId">
+                {{ cam.label || `摄像头 ${cameras.indexOf(cam) + 1}` }}
+              </option>
+            </select>
+          </div>
+          
+          <div class="camera-position-list">
+            <div 
+              v-for="(cam, index) in virtualCameras" 
+              :key="cam.id"
+              class="camera-position-item"
+              :class="{ active: activeCameraIndex === index }"
+              @click="switchCameraPosition(index)"
+            >
+              <span class="cam-indicator" :class="{ active: cam.active }">●</span>
+              <span class="cam-name">{{ cam.name }}</span>
+            </div>
+          </div>
+          
+          <div class="camera-switch-btns">
+            <button @click="prevCamera" class="btn btn-small" title="上一个机位">◀</button>
+            <span class="camera-position-info">{{ activeCameraIndex + 1 }} / {{ virtualCameras.length }}</span>
+            <button @click="nextCamera" class="btn btn-small" title="下一个机位">▶</button>
+          </div>
+          
+          <button @click="showMultiPreview = !showMultiPreview" class="btn btn-secondary btn-small" style="margin-top: 8px;">
+            {{ showMultiPreview ? '隐藏预览' : '多机位预览' }}
           </button>
         </div>
         
@@ -447,6 +742,54 @@ onUnmounted(() => {
           </div>
         </div>
         
+        <!-- 3D文本控制 -->
+        <div class="panel-section">
+          <h3>🔤 3D文本</h3>
+          <div class="text3d-controls">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="showText3D" @change="updateText3D">
+              显示3D文本
+            </label>
+            
+            <div class="control-group" v-if="showText3D">
+              <label>文本内容:</label>
+              <input type="text" v-model="text3DContent" @input="updateText3D" class="text-input" placeholder="输入文字...">
+              
+              <label>大小: {{ text3DSize }}</label>
+              <input type="range" v-model.number="text3DSize" min="0.1" max="2" step="0.1" @input="updateText3D">
+              
+              <label>X位置: {{ text3DX }}</label>
+              <input type="range" v-model.number="text3DX" min="-5" max="5" step="0.1" @input="updateText3D">
+              
+              <label>Y位置: {{ text3DY }}</label>
+              <input type="range" v-model.number="text3DY" min="-2" max="4" step="0.1" @input="updateText3D">
+              
+              <label>Z位置: {{ text3DZ }}</label>
+              <input type="range" v-model.number="text3DZ" min="-5" max="5" step="0.1" @input="updateText3D">
+              
+              <label>缩放: {{ text3DScale }}</label>
+              <input type="range" v-model.number="text3DScale" min="0.5" max="3" step="0.1" @input="updateText3D">
+              
+              <label>字体:</label>
+              <select v-model="text3DFont" @change="updateText3D" class="select-input">
+                <option value="helvetiker">Helvetiker</option>
+                <option value="gentilis">Gentilis</option>
+                <option value="optimer">Optimer</option>
+                <option value="droid/droid_sans">Droid Sans</option>
+                <option value="droid/droid_sans_mono">Droid Sans Mono</option>
+              </select>
+              
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="text3DBold" @change="updateText3D">
+                粗体
+              </label>
+              
+              <label>颜色:</label>
+              <input type="color" v-model="text3DColor" @input="updateText3D" class="color-input">
+            </div>
+          </div>
+        </div>
+        
         <div class="panel-section">
           <h3>⏺ 录制控制</h3>
           <div class="recording-controls">
@@ -476,6 +819,29 @@ onUnmounted(() => {
         <!-- 最终合成画布 -->
         <canvas ref="compositeCanvasRef" class="composite-canvas"></canvas>
         
+        <!-- 多机位预览覆盖层 -->
+        <div v-if="showMultiPreview && isStreaming" class="multi-camera-overlay">
+          <div class="multi-cam-grid">
+            <div 
+              v-for="(cam, index) in virtualCameras" 
+              :key="cam.id"
+              class="multi-cam-preview"
+              :class="{ active: activeCameraIndex === index }"
+              @click="switchCameraPosition(index)"
+            >
+              <div class="cam-preview-content">
+                <span class="cam-preview-label">{{ cam.name }}</span>
+                <span class="cam-preview-indicator" :class="{ active: cam.active }">●</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 机位切换动画提示 -->
+        <div v-if="isStreaming" class="camera-switch-indicator">
+          切换到: {{ virtualCameras[activeCameraIndex]?.name }}
+        </div>
+        
         <div v-if="!isStreaming" class="placeholder">
           <p>点击"启动摄像头"开始</p>
         </div>
@@ -488,9 +854,22 @@ onUnmounted(() => {
           <div class="status-info">
             <p>场景: {{ scenes.find(s => s.id === selectedScene)?.name }}</p>
             <p>背景: {{ backgrounds.find(b => b.id === selectedBg)?.name }}</p>
+            <p>机位: {{ virtualCameras[activeCameraIndex]?.name }}</p>
             <p>分辨率: 1280 x 720</p>
             <p>帧率: 30 FPS</p>
+            <p>可用摄像头: {{ cameras.length }}</p>
           </div>
+        </div>
+        
+        <div class="panel-section">
+          <h3>⌨️ 键盘控制</h3>
+          <ul class="tips">
+            <li><kbd>W</kbd> 前进 / <kbd>S</kbd> 后退</li>
+            <li><kbd>Q</kbd> 左转 / <kbd>E</kbd> 右转</li>
+            <li><kbd>A</kbd> 左移 / <kbd>D</kbd> 右移</li>
+            <li><kbd>R</kbd> 上升 / <kbd>F</kbd> 下降</li>
+            <li><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 切换机位</li>
+          </ul>
         </div>
         
         <div class="panel-section">
@@ -726,5 +1105,265 @@ onUnmounted(() => {
   position: absolute;
   left: 0;
   color: #ff00ff;
+}
+
+/* 多机位相关样式 */
+.camera-select {
+  margin-bottom: 12px;
+}
+
+.camera-select label {
+  display: block;
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.select-input {
+  width: 100%;
+  padding: 8px;
+  background: #1a1a2e;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 12px;
+}
+
+.camera-position-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.camera-position-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #1a1a2e;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.camera-position-item:hover {
+  background: #2a2a4e;
+}
+
+.camera-position-item.active {
+  border-color: #00ffff;
+  background: #2a2a4e;
+}
+
+.cam-indicator {
+  font-size: 10px;
+  color: #666;
+}
+
+.cam-indicator.active {
+  color: #00ff00;
+}
+
+.cam-name {
+  font-size: 12px;
+  color: #ccc;
+}
+
+.camera-switch-btns {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.camera-position-info {
+  font-size: 14px;
+  color: #00ffff;
+  font-weight: bold;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+  width: auto;
+}
+
+/* 多机位预览覆盖层 */
+.multi-camera-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.multi-cam-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 16px;
+  max-width: 600px;
+}
+
+.multi-cam-preview {
+  aspect-ratio: 16/9;
+  background: #1a1a2e;
+  border: 2px solid #333;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.multi-cam-preview:hover {
+  border-color: #ff00ff;
+}
+
+.multi-cam-preview.active {
+  border-color: #00ffff;
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+}
+
+.cam-preview-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.cam-preview-label {
+  font-size: 12px;
+  color: #ccc;
+}
+
+.cam-preview-indicator {
+  font-size: 16px;
+  color: #666;
+}
+
+.cam-preview-indicator.active {
+  color: #00ff00;
+}
+
+/* 机位切换提示 */
+.camera-switch-indicator {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  color: #00ffff;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  z-index: 50;
+  animation: fadeInOut 2s ease-in-out;
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* 键盘按键样式 */
+kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #2a2a4e;
+  border: 1px solid #444;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #00ffff;
+}
+
+/* 3D文本控件样式 */
+.text3d-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.text3d-controls .control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: #1a1a2e;
+  border-radius: 6px;
+}
+
+.text3d-controls label {
+  font-size: 11px;
+  color: #888;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: #ccc !important;
+  font-size: 12px !important;
+}
+
+.checkbox-label input {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.text-input {
+  width: 100%;
+  padding: 6px 8px;
+  background: #0a0a0f;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 12px;
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: #ff00ff;
+}
+
+.text3d-controls input[type="range"] {
+  width: 100%;
+  height: 4px;
+  background: #333;
+  border-radius: 2px;
+  appearance: none;
+  cursor: pointer;
+}
+
+.text3d-controls input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #ff00ff;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.color-input {
+  width: 100%;
+  height: 30px;
+  padding: 2px;
+  background: #0a0a0f;
+  border: 1px solid #333;
+  border-radius: 4px;
+  cursor: pointer;
 }
 </style>

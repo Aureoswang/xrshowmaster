@@ -57,23 +57,40 @@ let recordedChunks: Blob[] = []
 // 摄像头
 async function getCameras() {
   try {
-    await navigator.mediaDevices.getUserMedia({ video: true })
+    // 先请求权限
+    await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     const devices = await navigator.mediaDevices.enumerateDevices()
     cameras.value = devices.filter(d => d.kind === 'videoinput')
+    console.log('发现摄像头:', cameras.value.length)
     if (cameras.value.length && !selectedCameraId.value) selectedCameraId.value = cameras.value[0].deviceId
-  } catch (e) { console.error(e) }
+  } catch (e: any) {
+    console.error('获取摄像头列表失败:', e)
+  }
 }
 
 async function startCamera() {
   try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 1920, height: 1080, deviceId: selectedCameraId.value ? { exact: selectedCameraId.value } : undefined },
+    // 先尝试获取权限
+    const constraints: MediaStreamConstraints = {
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        deviceId: selectedCameraId.value ? { exact: selectedCameraId.value } : undefined
+      },
       audio: true
-    })
-    if (videoRef.value) { videoRef.value.srcObject = mediaStream; await videoRef.value.play() }
+    }
+    
+    mediaStream = await navigator.mediaDevices.getUserMedia(constraints)
+    if (videoRef.value) { 
+      videoRef.value.srcObject = mediaStream 
+      await videoRef.value.play()
+    }
     isStreaming.value = true
     startPreview()
-  } catch (e) { alert('无法启动摄像头') }
+  } catch (e: any) {
+    console.error('摄像头错误:', e)
+    alert('无法启动摄像头: ' + (e.message || '请检查权限'))
+  }
 }
 
 function stopCamera() {

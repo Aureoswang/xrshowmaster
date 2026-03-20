@@ -24,7 +24,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
-        run: if exist node_modules rmdir /s /q node_modules && if exist package-lock.json del package-lock.json && npm install
+        run: powershell -Command "if (Test-Path node_modules) { Remove-Item -Recurse -Force node_modules }; if (Test-Path package-lock.json) { Remove-Item package-lock.json }; npm install"
 
       - name: Build frontend
         run: npx vite build

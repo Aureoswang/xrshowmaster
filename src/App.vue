@@ -11,12 +11,29 @@ const selectedCameraId = ref('')
 let mediaStream: MediaStream | null = null
 
 // 场景/素材/镜头
-const scenes = ref([{ id: 1, name: '默认场景', icon: '🎬' }])
-const materials = ref([{ id: 1, name: '背景1.jpg', icon: '🖼️' }])
+const scenes = ref([
+  { id: 1, name: '默认场景', icon: '🎬', type: 'scene' },
+  { id: 2, name: '绿幕抠像', icon: '🟢', type: 'chroma' },
+  { id: 3, name: '虚拟演播室', icon: '🏢', type: 'scene' },
+  { id: 4, name: '电竞风格', icon: '🎮', type: 'scene' },
+  { id: 5, name: '商务风格', icon: '💼', type: 'scene' },
+  { id: 6, name: '清新风格', icon: '🌸', type: 'scene' },
+])
+const materials = ref([
+  { id: 1, name: '背景1.jpg', icon: '🖼️', type: 'image' },
+  { id: 2, name: '背景2.jpg', icon: '🖼️', type: 'image' },
+  { id: 3, name: 'LOGO.png', icon: '🏷️', type: 'image' },
+  { id: 4, name: '开场动画', icon: '🎬', type: 'video' },
+  { id: 5, name: '转场动画', icon: '🔄', type: 'video' },
+  { id: 6, name: '背景音乐', icon: '🎵', type: 'audio' },
+])
 const lenses = ref([
   { id: 'l1', name: '主机位', icon: '📷', active: true },
   { id: 'l2', name: '侧全景', icon: '🔭', active: false },
   { id: 'l3', name: '特写', icon: '🔎', active: false },
+  { id: 'l4', name: '远景', icon: '🌐', active: false },
+  { id: 'l5', name: '中景', icon: '👤', active: false },
+  { id: 'l6', name: '全景', icon: '🌄', active: false },
 ])
 const activeLens = ref('l1')
 

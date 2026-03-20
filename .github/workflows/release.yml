@@ -23,7 +23,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install all dependencies
-        run: npm install
+        run: npm install && npm install -g vite
 
       - name: Build Tauri app
         run: npx --yes vite build && npx --yes @tauri-apps/cli build

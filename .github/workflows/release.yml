@@ -10,30 +10,26 @@ jobs:
     permissions:
       contents: write
     runs-on: windows-latest
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
-      - name: Rust setup
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install all dependencies
-        run: npm install && npm install -g vite
-
       - name: Build Tauri app
-        run: npx --yes vite build && npx --yes @tauri-apps/cli build
-
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./src-tauri/target/release/bundle/nsis/*.exe
-          asset_name: XRShowMaster-${{ github.ref_name }}-setup.exe
-          asset_content_type: application/x-msdownload
+          tagName: ${{ github.ref_name }}
+          releaseName: 'XRShowMaster v__VERSION__'
+          releaseBody: 'See the assets to download this version and install.'
+          releaseDraft: false
+          prerelease: false
